@@ -1,0 +1,15 @@
+---
+layout: post
+title:  "Test Post"
+date:   2016-06-04 23:56:33
+categories: test
+---
+Test post for embedding python
+
+{% highlight python %}
+def lazy_iter(k):
+    i = 0
+    while(i < k):
+        i += 1
+        yield i
+{% endhighlight %}
