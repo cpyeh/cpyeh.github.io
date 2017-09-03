@@ -7,11 +7,11 @@
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <title>Welcome to Jekyll!</title>
-  <meta name="description" content="You’ll find this post in your _posts directory. Go ahead and edit it and re-build the site to see your changes. You can rebuild the site in many different wa...">
+  <title>Taiwan population pyramid</title>
+  <meta name="description" content="">
 
   <link rel="stylesheet" href="/css/main.css">
-  <link rel="canonical" href="http://cpyeh.github.io/jekyll/update/2015/10/01/welcome-to-jekyll.html">
+  <link rel="canonical" href="http://cpyeh.github.io/visualization/2016/06/04/taiwan-population-pyramid.html">
   <link rel="alternate" type="application/rss+xml" title="CP's Blog" href="http://cpyeh.github.io/feed.xml" />
 </head>
 
@@ -36,13 +36,13 @@
       <div class="trigger">
         
           
-          <a class="page-link" href="/about/">About</a>
-          
         
           
         
           
         
+          
+          <a class="page-link" href="/projects/">Projects</a>
           
         
       </div>
@@ -58,25 +58,16 @@
         <div class="post">
 
   <header class="post-header">
-    <h1 class="post-title">Welcome to Jekyll!</h1>
-    <p class="post-meta">Oct 1, 2015</p>
+     <script type="text/javascript" src="https://d3js.org/d3.v3.min.js" charset="utf-8"></script> 
+    <script type="text/javascript" src="http://cpyeh.github.io/assets/pyramid.js"></script>
+    <link rel="stylesheet" href="http://cpyeh.github.io/assets/pyramid.css" type="text/css" />
+    <h1 class="post-title">Taiwan population pyramid</h1>
+    <p class="post-meta">Jun 4, 2016</p>
   </header>
 
   <article class="post-content">
-    <p>You’ll find this post in your <code class="highlighter-rouge">_posts</code> directory. Go ahead and edit it and re-build the site to see your changes. You can rebuild the site in many different ways, but the most common way is to run <code class="highlighter-rouge">jekyll serve</code>, which launches a web server and auto-regenerates your site when a file is updated.</p>
-
-<p>To add new posts, simply add a file in the <code class="highlighter-rouge">_posts</code> directory that follows the convention <code class="highlighter-rouge">YYYY-MM-DD-name-of-post.ext</code> and includes the necessary front matter. Take a look at the source for this post to get an idea about how it works.</p>
-
-<p>Jekyll also offers powerful support for code snippets:</p>
-
-<figure class="highlight"><pre><code class="language-ruby" data-lang="ruby"><span class="k">def</span> <span class="nf">print_hi</span><span class="p">(</span><span class="nb">name</span><span class="p">)</span>
-  <span class="nb">puts</span> <span class="s2">"Hi, </span><span class="si">#{</span><span class="nb">name</span><span class="si">}</span><span class="s2">"</span>
-<span class="k">end</span>
-<span class="n">print_hi</span><span class="p">(</span><span class="s1">'Tom'</span><span class="p">)</span>
-<span class="c1">#=&gt; prints 'Hi, Tom' to STDOUT.</span></code></pre></figure>
-
-<p>Check out the <a href="http://jekyllrb.com">Jekyll docs</a> for more info on how to get the most out of Jekyll. File all bugs/feature requests at <a href="https://github.com/jekyll/jekyll">Jekyll’s GitHub repo</a>. If you have questions, you can ask them on <a href="https://github.com/jekyll/jekyll-help">Jekyll’s dedicated Help repository</a>.</p>
-
+    <div class="chart" id="pyramid_chart">
+</div>
 
   </article>
 
@@ -120,7 +111,7 @@
       </div>
 
       <div class="footer-col  footer-col-3">
-        <p class="text">Write an awesome description for your new site here. You can edit this line in _config.yml. It will appear in your document head meta (for Google search results) and in your feed.xml site description.
+        <p class="text">Notes for share
 </p>
       </div>
     </div>

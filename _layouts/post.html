@@ -4,6 +4,9 @@ layout: default
 <div class="post">
 
   <header class="post-header">
+    {% if page.d3_js %} <script type="text/javascript" src="https://d3js.org/d3.v3.min.js" charset="utf-8"></script> {% endif %}
+    {% if page.extra_javascript %}<script type="text/javascript" src="{{ site.url }}/assets/{{ page.extra_javascript }}"></script>{% endif %}
+    {% if page.extra_css %}<link rel="stylesheet" href="{{ site.url }}/assets/{{ page.extra_css }}" type="text/css" />{% endif %}
     <h1 class="post-title">{{ page.title }}</h1>
     <p class="post-meta">{{ page.date | date: "%b %-d, %Y" }}{% if page.author %} • {{ page.author }}{% endif %}{% if page.meta %} • {{ page.meta }}{% endif %}</p>
   </header>

@@ -1,8 +1,8 @@
 ---
 layout: visualization
-title:  "Test Post"
+title:  "Taiwan population pyramid"
 date:   2016-06-04 23:56:33
-categories: test
+categories: visualization
 plotlink: https://cpyeh.github.io/taiwan_population_pyramid/
 ---
 
