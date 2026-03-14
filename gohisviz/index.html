@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Go History Visualizer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.17/d3.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', sans-serif; background: #f5f0e8; color: #333; height: 100vh; display: flex; flex-direction: column; }
+#header { background: #2c2c2c; color: #eee; padding: 10px 16px; display: flex; align-items: center; gap: 16px; flex-shrink: 0; }
+#header h1 { font-size: 16px; font-weight: 600; white-space: nowrap; }
+#era-label { font-size: 13px; color: #aaa; white-space: nowrap; }
+#era-display { font-size: 13px; color: #f0c060; font-weight: 600; white-space: nowrap; }
+#slider-wrap { flex: 1; min-width: 200px; position: relative; height: 42px; display: flex; align-items: flex-start; }
+#slider-wrap input[type=range] {
+  position: absolute; top: 9px; width: 100%; pointer-events: none;
+  -webkit-appearance: none; appearance: none;
+  background: transparent; height: 4px;
+}
+#slider-wrap input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; pointer-events: all;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: #f0c060; cursor: pointer; border: 2px solid #2c2c2c;
+}
+#slider-track { position: absolute; top: 11px; left: 0; right: 0; height: 4px; background: #555; border-radius: 2px; }
+#slider-fill { position: absolute; top: 11px; height: 4px; background: #f0c060; border-radius: 2px; }
+.era-marker { position: absolute; top: 15px; display: flex; flex-direction: column; align-items: center; transform: translateX(-50%); pointer-events: none; }
+.era-marker-tick { width: 1px; height: 5px; background: rgba(240,192,96,0.45); }
+.era-marker-label { font-size: 8px; color: #9a8030; white-space: nowrap; margin-top: 1px; line-height: 1.2; text-align: center; }
+.era-marker.major .era-marker-tick { width: 2px; height: 7px; background: rgba(240,192,96,0.85); }
+.era-marker.major .era-marker-label { color: #c8a040; font-weight: 700; }
+#main { display: flex; flex: 1; overflow: hidden; }
+#stats-panel { width: 160px; flex-shrink: 0; background: #ede8d8; padding: 12px; border-right: 1px solid #ccc; overflow-y: auto; }
+#board-panel { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 8px; min-width: 0; }
+#go_board_div { width: 480px; height: 480px; flex-shrink: 0; }
+#nav-bar { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+#nav-bar button { padding: 4px 12px; cursor: pointer; background: #444; color: #eee; border: none; border-radius: 3px; font-size: 13px; }
+#nav-bar button:hover { background: #666; }
+#move-label { font-size: 13px; color: #555; }
+#games-panel { width: 240px; flex-shrink: 0; background: #ede8d8; border-left: 1px solid #ccc; display: flex; flex-direction: column; }
+#games-panel h3 { padding: 8px 10px; font-size: 13px; background: #d8d0b8; border-bottom: 1px solid #ccc; flex-shrink: 0; }
+#games-list { flex: 1; overflow-y: auto; }
+.game-item { padding: 7px 10px; border-bottom: 1px solid #d0c8b0; cursor: pointer; font-size: 12px; line-height: 1.4; }
+.game-item:hover { background: #e0d8c0; }
+.game-item.active { background: #c8c0a0; }
+.game-title { font-weight: 600; color: #222; }
+.game-meta { color: #666; }
+.game-result { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 11px; margin-left: 4px; }
+.result-b { background: #333; color: #fff; }
+.result-w { background: #fff; color: #333; border: 1px solid #aaa; }
+#stats-panel h3 { font-size: 13px; margin-bottom: 10px; color: #555; }
+.stat-row { margin-bottom: 10px; }
+.stat-label { font-size: 11px; color: #666; margin-bottom: 3px; }
+.stat-bar-wrap { height: 14px; background: #ccc; border-radius: 2px; overflow: hidden; }
+.stat-bar-black { height: 100%; background: #333; transition: width 0.2s; }
+.stat-value { font-size: 13px; font-weight: 600; margin-top: 2px; }
+.stat-count { font-size: 20px; font-weight: 700; color: #444; margin-top: 8px; }
+.stat-sublabel { font-size: 11px; color: #888; }
+.player-group { padding: 7px 10px; border-bottom: 1px solid #d0c8b0; cursor: pointer; font-size: 12px; line-height: 1.4; }
+.player-group:hover { background: #e0d8c0; }
+.player-group.active { background: #c8c0a0; }
+.player-names { font-weight: 600; color: #222; margin-bottom: 4px; display: flex; align-items: center; gap: 2px; flex-wrap: wrap; }
+.player-group-bar-wrap { height: 8px; background: #ccc; border-radius: 2px; overflow: hidden; margin-bottom: 3px; }
+.player-group-bar { height: 100%; background: #333; }
+.player-group-stats { font-size: 11px; color: #666; }
+#player-color-toggle { display: flex; padding: 4px 8px; gap: 4px; background: #d8d0b8; border-bottom: 1px solid #c0b898; flex-shrink: 0; }
+.color-btn { flex: 1; padding: 3px 4px; font-size: 11px; cursor: pointer; border: 1px solid #bbb; background: #e8e0c8; border-radius: 3px; color: #666; }
+.color-btn:hover { background: #d0c8b0; }
+.color-btn.active { color: #fff; border-color: transparent; }
+.color-btn[data-color="black"].active { background: #333; }
+.color-btn[data-color="either"].active { background: #777; }
+.color-btn[data-color="white"].active { background: #bbb; color: #333; }
+#filter-tags { padding: 4px 8px; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; border-bottom: 1px solid #d0c8b0; flex-shrink: 0; }
+#filter-tags:empty { display: none; padding: 0; border-bottom: none; }
+.filter-tag { display: inline-flex; align-items: center; gap: 3px; padding: 2px 7px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+.filter-tag.black-tag { background: #333; color: #fff; }
+.filter-tag.white-tag { background: #f0ede0; color: #333; border: 1px solid #aaa; }
+.filter-tag.either-tag { background: #777; color: #fff; }
+.filter-tag-x { cursor: pointer; opacity: 0.55; font-size: 10px; }
+.filter-tag-x:hover { opacity: 1; }
+.filter-vs { font-size: 11px; color: #999; font-style: italic; padding: 0 2px; }
+.stone-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.black-dot { background: #333; }
+.white-dot { background: #fff; border: 1px solid #999; }
+.vs-sep { color: #bbb; font-weight: 400; }
+#loading { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; font-size: 18px; z-index: 999; }
+#loading-bar-wrap { width: 300px; height: 8px; background: #555; border-radius: 4px; margin-top: 16px; }
+#loading-bar { height: 100%; background: #f0c060; border-radius: 4px; width: 0; transition: width 0.3s; }
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div>Loading game data…</div>
+  <div id="loading-bar-wrap"><div id="loading-bar"></div></div>
+  <div id="loading-status" style="margin-top:10px;font-size:14px;color:#aaa"></div>
+</div>
+
+<div id="header">
+  <h1>Go History Visualizer</h1>
+  <span id="era-label">Era:</span>
+  <div id="slider-wrap">
+    <div id="slider-track"></div>
+    <div id="slider-fill"></div>
+    <input type="range" id="slider-min" min="0" step="1" value="0">
+    <input type="range" id="slider-max" min="0" step="1" value="100">
+  </div>
+  <span id="era-display"></span>
+</div>
+
+<div id="main">
+  <div id="stats-panel">
+    <h3>Statistics</h3>
+    <div class="stat-row">
+      <div class="stat-label">Black win rate</div>
+      <div class="stat-bar-wrap"><div class="stat-bar-black" id="stat-bar" style="width:50%"></div></div>
+      <div class="stat-value" id="stat-pct">—</div>
+    </div>
+    <div class="stat-count" id="stat-count">—</div>
+    <div class="stat-sublabel">matching games</div>
+  </div>
+
+  <div id="board-panel">
+    <div id="go_board_div"></div>
+    <div id="nav-bar">
+      <button id="btn-prev">◀ Prev</button>
+      <span id="move-label">Move 0 / 0</span>
+      <button id="btn-next">Next ▶</button>
+    </div>
+  </div>
+
+  <div id="games-panel">
+    <h3 id="games-panel-title">Matching Games</h3>
+    <div id="player-color-toggle">
+      <button class="color-btn active" data-color="black">● Black</button>
+      <button class="color-btn" data-color="either">Both</button>
+      <button class="color-btn" data-color="white">○ White</button>
+    </div>
+    <div id="filter-tags"></div>
+    <div id="games-list"></div>
+  </div>
+</div>
+
+<script>
+// ===========================================================================
+// Tiny MD5 (self-contained, MIT)
+// ===========================================================================
+(function(g){function md5cycle(x,k){var a=x[0],b=x[1],c=x[2],d=x[3];
+a=ff(a,b,c,d,k[0],7,-680876936);d=ff(d,a,b,c,k[1],12,-389564586);c=ff(c,d,a,b,k[2],17,606105819);b=ff(b,c,d,a,k[3],22,-1044525330);
+a=ff(a,b,c,d,k[4],7,-176418897);d=ff(d,a,b,c,k[5],12,1200080426);c=ff(c,d,a,b,k[6],17,-1473231341);b=ff(b,c,d,a,k[7],22,-45705983);
+a=ff(a,b,c,d,k[8],7,1770035416);d=ff(d,a,b,c,k[9],12,-1958414417);c=ff(c,d,a,b,k[10],17,-42063);b=ff(b,c,d,a,k[11],22,-1990404162);
+a=ff(a,b,c,d,k[12],7,1804603682);d=ff(d,a,b,c,k[13],12,-40341101);c=ff(c,d,a,b,k[14],17,-1502002290);b=ff(b,c,d,a,k[15],22,1236535329);
+a=gg(a,b,c,d,k[1],5,-165796510);d=gg(d,a,b,c,k[6],9,-1069501632);c=gg(c,d,a,b,k[11],14,643717713);b=gg(b,c,d,a,k[0],20,-373897302);
+a=gg(a,b,c,d,k[5],5,-701558691);d=gg(d,a,b,c,k[10],9,38016083);c=gg(c,d,a,b,k[15],14,-660478335);b=gg(b,c,d,a,k[4],20,-405537848);
+a=gg(a,b,c,d,k[9],5,568446438);d=gg(d,a,b,c,k[14],9,-1019803690);c=gg(c,d,a,b,k[3],14,-187363961);b=gg(b,c,d,a,k[8],20,1163531501);
+a=gg(a,b,c,d,k[13],5,-1444681467);d=gg(d,a,b,c,k[2],9,-51403784);c=gg(c,d,a,b,k[7],14,1735328473);b=gg(b,c,d,a,k[12],20,-1926607734);
+a=hh(a,b,c,d,k[5],4,-378558);d=hh(d,a,b,c,k[8],11,-2022574463);c=hh(c,d,a,b,k[11],16,1839030562);b=hh(b,c,d,a,k[14],23,-35309556);
+a=hh(a,b,c,d,k[1],4,-1530992060);d=hh(d,a,b,c,k[4],11,1272893353);c=hh(c,d,a,b,k[7],16,-155497632);b=hh(b,c,d,a,k[10],23,-1094730640);
+a=hh(a,b,c,d,k[13],4,681279174);d=hh(d,a,b,c,k[0],11,-358537222);c=hh(c,d,a,b,k[3],16,-722521979);b=hh(b,c,d,a,k[6],23,76029189);
+a=hh(a,b,c,d,k[9],4,-640364487);d=hh(d,a,b,c,k[12],11,-421815835);c=hh(c,d,a,b,k[15],16,530742520);b=hh(b,c,d,a,k[2],23,-995338651);
+a=ii(a,b,c,d,k[0],6,-198630844);d=ii(d,a,b,c,k[7],10,1126891415);c=ii(c,d,a,b,k[14],15,-1416354905);b=ii(b,c,d,a,k[5],21,-57434055);
+a=ii(a,b,c,d,k[12],6,1700485571);d=ii(d,a,b,c,k[3],10,-1894986606);c=ii(c,d,a,b,k[10],15,-1051523);b=ii(b,c,d,a,k[1],21,-2054922799);
+a=ii(a,b,c,d,k[8],6,1873313359);d=ii(d,a,b,c,k[15],10,-30611744);c=ii(c,d,a,b,k[6],15,-1560198380);b=ii(b,c,d,a,k[13],21,1309151649);
+a=ii(a,b,c,d,k[4],6,-145523070);d=ii(d,a,b,c,k[11],10,-1120210379);c=ii(c,d,a,b,k[2],15,718787259);b=ii(b,c,d,a,k[9],21,-343485551);
+x[0]=add32(a,x[0]);x[1]=add32(b,x[1]);x[2]=add32(c,x[2]);x[3]=add32(d,x[3]);}
+function cmn(q,a,b,x,s,t){a=add32(add32(a,q),add32(x,t));return add32((a<<s)|(a>>>(32-s)),b);}
+function ff(a,b,c,d,x,s,t){return cmn((b&c)|((~b)&d),a,b,x,s,t);}
+function gg(a,b,c,d,x,s,t){return cmn((b&d)|(c&(~d)),a,b,x,s,t);}
+function hh(a,b,c,d,x,s,t){return cmn(b^c^d,a,b,x,s,t);}
+function ii(a,b,c,d,x,s,t){return cmn(c^(b|(~d)),a,b,x,s,t);}
+function md51(s){var n=s.length,state=[1732584193,-271733879,-1732584194,271733878],i;
+for(i=64;i<=n;i+=64){md5cycle(state,md5blk(s.substring(i-64,i)));}
+s=s.substring(i-64);var tail=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+for(i=0;i<s.length;i++)tail[i>>2]|=s.charCodeAt(i)<<((i%4)<<3);
+tail[i>>2]|=0x80<<((i%4)<<3);if(i>55){md5cycle(state,tail);for(i=0;i<16;i++)tail[i]=0;}
+tail[14]=n*8;md5cycle(state,tail);return state;}
+function md5blk(s){var md5blks=[],i;for(i=0;i<64;i+=4)
+md5blks[i>>2]=s.charCodeAt(i)+(s.charCodeAt(i+1)<<8)+(s.charCodeAt(i+2)<<16)+(s.charCodeAt(i+3)<<24);return md5blks;}
+function add32(a,b){return(a+b)&0xFFFFFFFF;}
+function md5bytes(s){var state=md51(s),bytes=[];
+for(var i=0;i<4;i++)for(var j=0;j<4;j++)bytes.push((state[i]>>(j*8))&0xFF);
+return bytes;}
+g.md5bytes=md5bytes;
+})(window);
+
+function bytesToBase64url(bytes) {
+  var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+  var result = '';
+  for (var i = 0; i < bytes.length; i += 3) {
+    var b0 = bytes[i], b1 = bytes[i+1]||0, b2 = bytes[i+2]||0;
+    result += chars[b0>>2] + chars[((b0&3)<<4)|(b1>>4)] + chars[((b1&15)<<2)|(b2>>6)] + chars[b2&63];
+  }
+  return result;
+}
+
+// ===========================================================================
+// Canonical Hash (mirrors build.py)
+// ===========================================================================
+function applyTransform(flat, t) {
+  var result = new Array(361);
+  for (var r = 0; r < 19; r++) {
+    for (var c = 0; c < 19; c++) {
+      var val = flat[r*19+c], nr, nc;
+      if      (t===0){nr=r;      nc=c;}
+      else if (t===1){nr=c;      nc=18-r;}
+      else if (t===2){nr=18-r;   nc=18-c;}
+      else if (t===3){nr=18-c;   nc=r;}
+      else if (t===4){nr=r;      nc=18-c;}
+      else if (t===5){nr=18-c;   nc=18-r;}
+      else if (t===6){nr=18-r;   nc=c;}
+      else           {nr=c;      nc=r;}
+      result[nr*19+nc] = val;
+    }
+  }
+  return result;
+}
+
+function canonicalHash(flat) {
+  var best = null;
+  for (var t = 0; t < 8; t++) {
+    var s = applyTransform(flat, t).join('');
+    if (best === null || s < best) best = s;
+  }
+  return bytesToBase64url(md5bytes(best)).slice(0, 12);
+}
+
+// ===========================================================================
+// Board Simulator
+// ===========================================================================
+function makeBoard() { return new Int8Array(361); }
+
+function boardNeighbors(idx) {
+  var r = (idx/19)|0, c = idx%19, nb = [];
+  if (r>0)  nb.push((r-1)*19+c);
+  if (r<18) nb.push((r+1)*19+c);
+  if (c>0)  nb.push(r*19+(c-1));
+  if (c<18) nb.push(r*19+(c+1));
+  return nb;
+}
+
+function groupAndLiberties(board, idx) {
+  var color = board[idx], group = [], libs = new Set(), visited = new Set(), queue = [idx];
+  visited.add(idx);
+  while (queue.length) {
+    var cur = queue.shift(); group.push(cur);
+    boardNeighbors(cur).forEach(function(n) {
+      if (visited.has(n)) return; visited.add(n);
+      if (board[n]===0) libs.add(n);
+      else if (board[n]===color) queue.push(n);
+    });
+  }
+  return {group:group, libs:libs};
+}
+
+function placeStone(board, col, row, color) {
+  var idx = row*19+col;
+  if (board[idx]!==0) return false;
+  board[idx] = color;
+  var opp = 3-color;
+  boardNeighbors(idx).forEach(function(n) {
+    if (board[n]===opp) {
+      var gl = groupAndLiberties(board, n);
+      if (gl.libs.size===0) gl.group.forEach(function(p){board[p]=0;});
+    }
+  });
+  var gl2 = groupAndLiberties(board, idx);
+  if (gl2.libs.size===0) { board[idx]=0; return false; }
+  return true;
+}
+
+function replayTo(movesStr, targetMove) {
+  var board = makeBoard(), color = 1, total = (movesStr.length/2)|0;
+  var limit = Math.min(targetMove, total);
+  var lastCol = -1, lastRow = -1;
+  for (var i = 0; i < limit; i++) {
+    var ch0 = movesStr[i*2], ch1 = movesStr[i*2+1];
+    if (ch0 && ch0!=='.') {
+      lastCol = ch0.charCodeAt(0)-97; lastRow = ch1.charCodeAt(0)-97;
+      placeStone(board, lastCol, lastRow, color);
+    } else { lastCol = -1; lastRow = -1; }
+    color = 3-color;
+  }
+  return {board:board, moveCount:limit, lastCol:lastCol, lastRow:lastRow, totalMoves:total};
+}
+
+// ===========================================================================
+// Board Rendering
+// ===========================================================================
+var W = 480, H = 480, boardSize = 19;
+var hgap = W/(boardSize+1), vgap = H/(boardSize+1);
+var margin = {top:vgap, left:hgap};
+
+var chart = d3.select('#go_board_div').append('svg')
+  .attr('width',W).attr('height',H)
+  .style('display','block').style('margin','auto').style('background','#dcb46a');
+
+for (var i = 0; i < boardSize; i++) {
+  chart.append('line').attr('x1',margin.left+i*hgap).attr('y1',margin.top).attr('x2',margin.left+i*hgap).attr('y2',H-margin.top).style('stroke','rgb(0,0,0)').style('stroke-width',W/250);
+  chart.append('line').attr('x1',margin.left).attr('y1',margin.top+i*vgap).attr('x2',W-margin.left).attr('y2',margin.top+i*vgap).style('stroke','rgb(0,0,0)').style('stroke-width',W/250);
+}
+[[3,3],[3,9],[3,15],[9,3],[9,9],[9,15],[15,3],[15,9],[15,15]].forEach(function(p) {
+  chart.append('circle').attr('cx',margin.left+p[0]*hgap).attr('cy',margin.top+p[1]*vgap).attr('r',W/150).attr('fill','black');
+});
+
+var stoneLayer = chart.append('g').attr('id','stones');
+var nextMoveLayer = chart.append('g').attr('id','next-moves');
+
+function renderBoard(board, lastCol, lastRow) {
+  stoneLayer.selectAll('*').remove();
+  for (var r = 0; r < 19; r++) {
+    for (var c = 0; c < 19; c++) {
+      var val = board[r*19+c];
+      if (val===0) continue;
+      var cx = margin.left+c*hgap, cy = margin.top+r*vgap;
+      var isLast = (c===lastCol && r===lastRow);
+      var stone = stoneLayer.append('circle').attr('cx',cx).attr('cy',cy).attr('r',vgap/2.3).style('stroke','black').style('stroke-width',W/300);
+      if (val===1) {
+        stone.style('fill','black');
+        if (isLast) stoneLayer.append('circle').attr('cx',cx).attr('cy',cy).attr('r',vgap/6).style('fill','rgba(255,255,255,0.5)').style('pointer-events','none');
+      } else {
+        stone.style('fill','rgb(255,255,255)');
+        if (isLast) stoneLayer.append('circle').attr('cx',cx).attr('cy',cy).attr('r',vgap/6).style('fill','rgba(0,0,0,0.3)').style('pointer-events','none');
+      }
+    }
+  }
+}
+
+// ===========================================================================
+// D4 transform helpers for canonical next-move mapping
+// situations format: hash -> [[game_idx, next_move_idx, transform_idx], ...]
+// transform_idx = D4 transform that maps game's board → canonical form
+// ===========================================================================
+
+// Inverse of each D4 transform (verified: T_inv[t] composed with T[t] = identity)
+var TRANSFORM_INVERSE = [0, 3, 2, 1, 4, 5, 6, 7];
+
+// Apply transform t to a single board point (row, col). Returns [new_row, new_col].
+// Must match _transform() in build.py: result[nr][nc] = original[r][c].
+function applyTransformToPoint(row, col, t) {
+  if      (t===0) return [row,      col];
+  else if (t===1) return [col,      18-row];
+  else if (t===2) return [18-row,   18-col];
+  else if (t===3) return [18-col,   row];
+  else if (t===4) return [row,      18-col];
+  else if (t===5) return [18-col,   18-row];
+  else if (t===6) return [18-row,   col];
+  else            return [col,      row];
+}
+
+// Find which D4 transform maps this flat board to its canonical (lex-min) form.
+function findCanonicalTransform(flat) {
+  var best = null, bestT = 0;
+  for (var t = 0; t < 8; t++) {
+    var s = applyTransform(flat, t).join('');
+    if (best === null || s < best) { best = s; bestT = t; }
+  }
+  return bestT;
+}
+
+// Find the lex-min position of a single stone over all 8 D4 transforms.
+// Used for the empty-board case where the stored tGame is meaningless (all transforms tie).
+function lexMinStonePos(row, col) {
+  var best = [row, col];
+  for (var t = 1; t < 8; t++) {
+    var q = applyTransformToPoint(row, col, t);
+    if (q[0] < best[0] || (q[0] === best[0] && q[1] < best[1])) best = q;
+  }
+  return best; // [row, col] in canonical space
+}
+
+// Compute next-move data in display coordinates, collapsing D4-equivalent moves.
+// Returns {key: {count, col, row}} where col/row are display (current board) coords.
+function getNextMoveData() {
+  var flat = Array.from(currentBoard);
+  // Moves are stored pre-normalized by build.py (first stone → top-right),
+  // so tGame from situations correctly maps any game's board to canonical form.
+  var tCurrent = findCanonicalTransform(flat);
+  var tCurrentInv = TRANSFORM_INVERSE[tCurrent];
+
+  var hash = canonicalHash(flat);
+  var pairs = situations[hash] || [];
+  var data = {}; // "col_row" -> {count, col, row}
+  for (var k = 0; k < pairs.length; k++) {
+    var p = pairs[k];
+    if (!gameInEra(games[p[0]]) || !gameMatchesPlayer(games[p[0]])) continue;
+    var ni = p[1], tGame = p[2], g = games[p[0]];
+    if (ni*2+2 > g.mv.length) continue;
+    var ch0 = g.mv[ni*2], ch1 = g.mv[ni*2+1];
+    if (!ch0 || ch0==='.') continue;
+
+    var col = ch0.charCodeAt(0)-97, row = ch1.charCodeAt(0)-97;
+    var canon = applyTransformToPoint(row, col, tGame);
+    var disp = applyTransformToPoint(canon[0], canon[1], tCurrentInv);
+    var key = disp[1]+'_'+disp[0];
+    if (!data[key]) data[key] = {count:0, col:disp[1], row:disp[0]};
+    data[key].count++;
+  }
+  return data;
+}
+
+function renderNextMoves() {
+  nextMoveLayer.selectAll('*').remove();
+  var data = getNextMoveData();
+  var keys = Object.keys(data);
+  if (keys.length===0) return;
+
+  var maxCount = 0;
+  keys.forEach(function(k){ if (data[k].count>maxCount) maxCount=data[k].count; });
+  var isBlackTurn = (currentMove%2===0);
+
+  // Assign ranks by count descending
+  var sorted = keys.slice().sort(function(a,b){ return data[b].count - data[a].count; });
+  var rankOf = {}; sorted.forEach(function(k,i){ rankOf[k] = i+1; });
+
+  keys.forEach(function(key) {
+    var d = data[key], col = d.col, row = d.row, count = d.count;
+    if (currentBoard[row*19+col]!==0) return; // occupied
+
+    var rank = rankOf[key];
+    var opacity, stoneFill, textOpacity;
+    if (rank <= 3) {
+      opacity = 0.92;
+      stoneFill = isBlackTurn ? 'black' : 'white';
+      textOpacity = 1.0;
+    } else if (rank <= 13) {
+      opacity = 0.55;
+      stoneFill = isBlackTurn ? '#555' : '#ddd';
+      textOpacity = 1.0;
+    } else {
+      opacity = 0.15 + 0.40*(count/maxCount);
+      stoneFill = isBlackTurn ? 'black' : 'white';
+      textOpacity = Math.min(1, opacity+0.15);
+    }
+
+    var cx = margin.left+col*hgap, cy = margin.top+row*vgap;
+    var grp = nextMoveLayer.append('g').style('cursor','pointer');
+    grp.append('circle')
+      .attr('cx',cx).attr('cy',cy).attr('r',vgap/2.3)
+      .style('fill', stoneFill)
+      .style('stroke', isBlackTurn ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.5)')
+      .style('stroke-width', 1.5)
+      .style('opacity', opacity);
+    grp.append('text')
+      .attr('x',cx).attr('y',cy)
+      .attr('text-anchor','middle').attr('dominant-baseline','central')
+      .style('font-size', Math.max(8, vgap/3.2)+'px')
+      .style('font-weight','600')
+      .style('fill', isBlackTurn ? 'white' : '#333')
+      .style('opacity', textOpacity)
+      .style('pointer-events','none')
+      .text(count);
+    (function(dcol, drow) {
+      grp.on('click', function(){ onNextMoveDotClick(dcol, drow); });
+      grp.on('mouseenter', function(){ onNextMoveDotHover(dcol, drow); });
+      grp.on('mouseleave', function(){ updateStats(); });
+    })(col, row);
+  });
+}
+
+function onNextMoveDotClick(dispCol, dispRow) {
+  // Place stone directly at display coords — avoids jump from game-coord mismatch
+  var color = (currentMove % 2 === 0) ? 1 : 2;
+  var newBoard = new Int8Array(currentBoard);
+  if (!placeStone(newBoard, dispCol, dispRow, color)) return;
+  explorationMoves.push({col: dispCol, row: dispRow, prevBoard: new Int8Array(currentBoard)});
+  currentBoard = newBoard;
+  currentMove++;
+  currentGame = null;
+  renderBoard(currentBoard, dispCol, dispRow);
+  document.getElementById('move-label').textContent = 'Move ' + currentMove;
+  updateStats();
+  updateGamesList();
+  renderNextMoves();
+}
+
+// ===========================================================================
+// Data + State
+// ===========================================================================
+var games = null, situations = null;
+var currentGame = null, currentMove = 0;
+var currentBoard = makeBoard();
+// Exploration mode: stack of {col, row, prevBoard} for undo via Prev button
+var explorationMoves = [];
+
+// Era filter: piecewise year-based scale
+// Pre-1949 (no komi) = 20% of slider; post-1949 = 80%, linear by year
+var SLIDER_STEPS = 1000;
+var ERA_KOMI_YEAR = 1949; // komi officially adopted by Nihon Ki-in
+var ERA_KOMI_POS  = 200;  // 20% of slider for pre-komi era
+var dataMinYear = 1561, dataMaxYear = 2026;
+var eraMinYear = 1561, eraMaxYear = 2026;
+
+function yearToSliderPos(year) {
+  year = Math.max(dataMinYear, Math.min(dataMaxYear, year));
+  if (year <= ERA_KOMI_YEAR) {
+    return Math.round(ERA_KOMI_POS * (year - dataMinYear) / (ERA_KOMI_YEAR - dataMinYear));
+  } else {
+    return Math.round(ERA_KOMI_POS + (SLIDER_STEPS - ERA_KOMI_POS) * (year - ERA_KOMI_YEAR) / (dataMaxYear - ERA_KOMI_YEAR));
+  }
+}
+
+function sliderPosToYear(pos) {
+  pos = Math.max(0, Math.min(SLIDER_STEPS, pos));
+  if (pos <= ERA_KOMI_POS) {
+    return Math.round(dataMinYear + (ERA_KOMI_YEAR - dataMinYear) * pos / ERA_KOMI_POS);
+  } else {
+    return Math.round(ERA_KOMI_YEAR + (dataMaxYear - ERA_KOMI_YEAR) * (pos - ERA_KOMI_POS) / (SLIDER_STEPS - ERA_KOMI_POS));
+  }
+}
+
+function gameInEra(g) {
+  if (!g.dt) return false;
+  var y = parseInt(g.dt);
+  return y >= eraMinYear && y <= eraMaxYear;
+}
+
+var selectedPlayer = null;
+var selectedPlayerColor = 'black'; // 'black' | 'white' | 'either'
+var secondaryPlayer = null;        // opponent filter (only when primary color is 'black' or 'white')
+
+function gameMatchesPlayer(g) {
+  if (selectedPlayer) {
+    var primOk = selectedPlayerColor === 'black' ? g.pb === selectedPlayer
+               : selectedPlayerColor === 'white' ? g.pw === selectedPlayer
+               : (g.pb === selectedPlayer || g.pw === selectedPlayer);
+    if (!primOk) return false;
+  }
+  if (secondaryPlayer) {
+    var secOk = selectedPlayerColor === 'black' ? g.pw === secondaryPlayer
+              : selectedPlayerColor === 'white' ? g.pb === secondaryPlayer
+              : (g.pb === secondaryPlayer || g.pw === secondaryPlayer);
+    if (!secOk) return false;
+  }
+  return true;
+}
+
+// ===========================================================================
+// Slider
+// ===========================================================================
+var sliderMin = document.getElementById('slider-min');
+var sliderMax = document.getElementById('slider-max');
+var sliderFill = document.getElementById('slider-fill');
+var eraDisplay = document.getElementById('era-display');
+
+function updateSliderFill() {
+  var lo = parseInt(sliderMin.value), hi = parseInt(sliderMax.value);
+  sliderFill.style.left  = (lo / SLIDER_STEPS * 100) + '%';
+  sliderFill.style.width = ((hi - lo) / SLIDER_STEPS * 100) + '%';
+  eraDisplay.textContent = sliderPosToYear(lo) + ' → ' + sliderPosToYear(hi);
+}
+
+sliderMin.addEventListener('input', function() {
+  if (parseInt(sliderMin.value) > parseInt(sliderMax.value)) sliderMin.value = sliderMax.value;
+  eraMinYear = sliderPosToYear(parseInt(sliderMin.value));
+  updateSliderFill(); updateStats(); updateGamesList(); renderNextMoves();
+});
+sliderMax.addEventListener('input', function() {
+  if (parseInt(sliderMax.value) < parseInt(sliderMin.value)) sliderMax.value = sliderMin.value;
+  eraMaxYear = sliderPosToYear(parseInt(sliderMax.value));
+  updateSliderFill(); updateStats(); updateGamesList(); renderNextMoves();
+});
+
+// Historical markers (year, label, major)
+var ERA_MARKERS = [
+  { year: 1868, label: 'Meiji',      major: false },
+  { year: 1949, label: 'Komi\n4.5', major: true  },
+  { year: 1973, label: 'Komi\n5.5', major: true  },
+  { year: 2002, label: 'Komi\n6.5', major: true  },
+  { year: 2016, label: 'AlphaGo',   major: true  },
+];
+
+function renderEraMarkers() {
+  var wrap = document.getElementById('slider-wrap');
+  ERA_MARKERS.forEach(function(m) {
+    if (m.year <= dataMinYear || m.year >= dataMaxYear) return;
+    var pct = yearToSliderPos(m.year) / SLIDER_STEPS * 100;
+    var div = document.createElement('div');
+    div.className = 'era-marker' + (m.major ? ' major' : '');
+    div.style.left = pct + '%';
+    div.innerHTML = '<div class="era-marker-tick"></div>' +
+      '<div class="era-marker-label">' + m.label.replace('\n', '<br>') + '</div>';
+    wrap.appendChild(div);
+  });
+}
+
+// ===========================================================================
+// Stats + Games Panel
+// situations[hash] = [[game_idx, next_move_idx], ...]
+// ===========================================================================
+function currentHash() { return canonicalHash(Array.from(currentBoard)); }
+
+function getFilteredPairs(hash) {
+  var pairs = situations[hash]||[];
+  return pairs.filter(function(p){ return gameInEra(games[p[0]]) && gameMatchesPlayer(games[p[0]]); });
+}
+
+function updateStatsForHash(hash, prefix) {
+  var filtered = getFilteredPairs(hash);
+  var total = filtered.length;
+  var bwins = filtered.filter(function(p){ var re=games[p[0]].re; return re&&re[0]==='B'; }).length;
+  var pct = total>0 ? Math.round(bwins/total*100) : 50;
+  document.getElementById('stat-bar').style.width = pct+'%';
+  document.getElementById('stat-pct').textContent = total>0 ? (prefix||'')+pct+'% Black' : '—';
+  document.getElementById('stat-count').textContent = total>0 ? total : '—';
+}
+
+function updateStats() {
+  updateStatsForHash(currentHash());
+}
+
+function onNextMoveDotHover(dispCol, dispRow) {
+  var color = (currentMove % 2 === 0) ? 1 : 2;
+  var hoverBoard = new Int8Array(currentBoard);
+  if (!placeStone(hoverBoard, dispCol, dispRow, color)) return;
+  var hoverHash = canonicalHash(Array.from(hoverBoard));
+  updateStatsForHash(hoverHash, 'if placed: ');
+}
+
+function renderFilterTags() {
+  var container = document.getElementById('filter-tags');
+  container.innerHTML = '';
+  function makeTag(player, color, onClear) {
+    var tag = document.createElement('span');
+    tag.className = 'filter-tag ' + (color === 'black' ? 'black-tag' : color === 'white' ? 'white-tag' : 'either-tag');
+    var dot = color === 'black' ? '● ' : color === 'white' ? '○ ' : '';
+    tag.innerHTML = dot + esc(player) + ' <span class="filter-tag-x">✕</span>';
+    tag.querySelector('.filter-tag-x').addEventListener('click', onClear);
+    return tag;
+  }
+  if (selectedPlayer) {
+    container.appendChild(makeTag(selectedPlayer, selectedPlayerColor, function() {
+      selectedPlayer = null; secondaryPlayer = null;
+      updateStats(); updateGamesList(); renderNextMoves();
+    }));
+  }
+  if (secondaryPlayer) {
+    var secColor = selectedPlayerColor === 'black' ? 'white' : selectedPlayerColor === 'white' ? 'black' : 'either';
+    var vs = document.createElement('span');
+    vs.className = 'filter-vs'; vs.textContent = 'vs';
+    container.appendChild(vs);
+    container.appendChild(makeTag(secondaryPlayer, secColor, function() {
+      secondaryPlayer = null;
+      updateStats(); updateGamesList(); renderNextMoves();
+    }));
+  }
+}
+
+function updateGamesList() {
+  var hash = currentHash();
+  var filtered = getFilteredPairs(hash);
+  var total = filtered.length;
+  document.getElementById('games-panel-title').textContent = 'Matching Games (' + total + ')';
+  renderFilterTags();
+  var list = document.getElementById('games-list');
+  list.innerHTML = '';
+  if (total === 0) return;
+
+  if (total < 30) {
+    // Individual game rows
+    var sorted = filtered.slice().sort(function(a, b) {
+      var ga = games[a[0]], gb = games[b[0]];
+      var c = (ga.pb||'').localeCompare(gb.pb||'');
+      return c !== 0 ? c : (ga.pw||'').localeCompare(gb.pw||'');
+    });
+    sorted.forEach(function(p) {
+      var i = p[0], ni = p[1], g = games[i];
+      var div = document.createElement('div');
+      div.className = 'game-item' + (i === currentGame ? ' active' : '');
+      div.dataset.gameIdx = i; div.dataset.moveIdx = ni;
+      var re = g.re || '';
+      div.innerHTML =
+        '<div class="game-title">' +
+        '<span class="stone-dot black-dot" style="margin-right:3px"></span>' + esc(g.pb||'?') +
+        ' <span class="vs-sep">vs</span> ' +
+        '<span class="stone-dot white-dot" style="margin-right:3px"></span>' + esc(g.pw||'?') +
+        '</div>' +
+        '<div class="game-meta">' + esc(g.dt||'') +
+        ' <span class="game-result ' + (re[0]==='B'?'result-b':'result-w') + '">' + esc(re) + '</span>' +
+        (g.ev ? ' · '+esc(g.ev) : '') + ' (move ' + ni + ')</div>';
+      div.addEventListener('click', onGameClick);
+      list.appendChild(div);
+    });
+    return;
+  }
+
+  // Grouped view (≥30 games)
+  // groupByBlack=true → rows show black players; false → white players
+  var showingOpponents = !!(selectedPlayer && selectedPlayerColor !== 'either');
+  var groupByBlack = showingOpponents
+    ? (selectedPlayerColor === 'white')  // selected is white → show black opponents
+    : (selectedPlayerColor === 'black'); // no filter: show the toggled color
+
+  var groups = {};
+  if (selectedPlayerColor === 'either') {
+    // Union: group by all unique player names; wins = this player's own wins
+    filtered.forEach(function(p) {
+      var g = games[p[0]];
+      var addP = function(name, isBlack) {
+        if (!name || (selectedPlayer && name === selectedPlayer)) return;
+        if (!groups[name]) groups[name] = {name:name, pairs:[], wins:0, asBlack:0, asWhite:0};
+        groups[name].pairs.push(p);
+        if (isBlack) groups[name].asBlack++; else groups[name].asWhite++;
+        var won = isBlack ? (g.re && g.re[0]==='B') : (g.re && g.re[0]==='W');
+        if (won) groups[name].wins++;
+      };
+      addP(g.pb, true);
+      if (g.pw !== g.pb) addP(g.pw, false);
+    });
+  } else {
+    // wins = win for the player in their listed color role
+    var groupField = groupByBlack ? 'pb' : 'pw';
+    var winChar = groupByBlack ? 'B' : 'W';
+    filtered.forEach(function(p) {
+      var g = games[p[0]];
+      var name = g[groupField] || '?';
+      if (!groups[name]) groups[name] = {name:name, pairs:[], wins:0};
+      groups[name].pairs.push(p);
+      if (g.re && g.re[0]===winChar) groups[name].wins++;
+    });
+  }
+
+  var winLabel = selectedPlayerColor === 'either' ? '% wins'
+               : groupByBlack ? '% black wins' : '% white wins';
+
+  Object.values(groups).sort(function(a, b) {
+    if (b.pairs.length !== a.pairs.length) return b.pairs.length - a.pairs.length;
+    var pa = a.wins/a.pairs.length, pb2 = b.wins/b.pairs.length;
+    return Math.abs(pb2-pa) > 0.001 ? pb2-pa : a.name.localeCompare(b.name);
+  }).forEach(function(grp) {
+    var cnt = grp.pairs.length;
+    var pct = Math.round(grp.wins/cnt*100);
+    var isActive = grp.pairs.some(function(p){ return p[0]===currentGame; });
+    var isFiltered = grp.name===selectedPlayer || grp.name===secondaryPlayer;
+
+    // Color dot(s)
+    var colorDot;
+    if (selectedPlayerColor === 'either') {
+      colorDot = (grp.asBlack ? '<span class="stone-dot black-dot"></span>' : '') +
+                 (grp.asWhite ? '<span class="stone-dot white-dot"></span>' : '');
+    } else {
+      colorDot = groupByBlack
+        ? '<span class="stone-dot black-dot"></span>'
+        : '<span class="stone-dot white-dot"></span>';
+    }
+
+    var div = document.createElement('div');
+    div.className = 'player-group' + (isActive || isFiltered ? ' active' : '');
+    div.innerHTML =
+      '<div class="player-names">' + colorDot + esc(grp.name) + '</div>' +
+      '<div class="player-group-bar-wrap"><div class="player-group-bar" style="width:'+pct+'%"></div></div>' +
+      '<div class="player-group-stats">' + pct + ' ' + winLabel + ' · ' + cnt + ' game' + (cnt>1?'s':'') + '</div>';
+
+    (function(name) {
+      div.addEventListener('click', function() {
+        if (!selectedPlayer) {
+          selectedPlayer = name;
+        } else if (selectedPlayer === name) {
+          selectedPlayer = null; secondaryPlayer = null;
+        } else if (secondaryPlayer === name) {
+          secondaryPlayer = null;
+        } else {
+          secondaryPlayer = name;
+        }
+        updateStats(); updateGamesList(); renderNextMoves();
+      });
+    })(grp.name);
+    list.appendChild(div);
+  });
+}
+
+// Color toggle handler
+document.querySelectorAll('#player-color-toggle .color-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('#player-color-toggle .color-btn').forEach(function(b){ b.classList.remove('active'); });
+    btn.classList.add('active');
+    selectedPlayerColor = btn.dataset.color;
+    selectedPlayer = null; secondaryPlayer = null;
+    updateStats(); updateGamesList(); renderNextMoves();
+  });
+});
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ===========================================================================
+// Navigation
+// ===========================================================================
+function loadGame(gameIdx, targetMove) {
+  explorationMoves = []; // leave exploration mode when loading a specific game
+  currentGame = gameIdx;
+  var g = games[gameIdx];
+  var total = (g.mv.length/2)|0;
+  if (targetMove===undefined||targetMove===null) targetMove=0;
+  goToMove(Math.max(0, Math.min(targetMove, total)));
+}
+
+function goToMove(moveNum) {
+  if (currentGame === null) {
+    // Exploration mode: Prev undoes exploration moves one at a time
+    if (moveNum < currentMove) {
+      while (currentMove > moveNum && explorationMoves.length > 0) {
+        var m = explorationMoves.pop();
+        currentBoard = m.prevBoard;
+        currentMove--;
+      }
+      var lastM = explorationMoves[explorationMoves.length - 1];
+      renderBoard(currentBoard, lastM ? lastM.col : -1, lastM ? lastM.row : -1);
+      document.getElementById('move-label').textContent = 'Move ' + currentMove;
+      updateStats();
+      updateGamesList();
+      renderNextMoves();
+    }
+    return;
+  }
+  var g = games[currentGame];
+  var total = (g.mv.length/2)|0;
+  moveNum = Math.max(0, Math.min(moveNum, total));
+  var result = replayTo(g.mv, moveNum);
+  currentBoard = result.board;
+  currentMove = result.moveCount;
+  renderBoard(currentBoard, result.lastCol, result.lastRow);
+  document.getElementById('move-label').textContent = 'Move '+currentMove+' / '+total;
+  updateStats();
+  updateGamesList();
+  renderNextMoves();
+}
+
+document.getElementById('btn-prev').addEventListener('click', function(){ goToMove(currentMove-1); });
+document.getElementById('btn-next').addEventListener('click', function(){ goToMove(currentMove+1); });
+document.addEventListener('keydown', function(e) {
+  if      (e.key==='ArrowLeft')  goToMove(currentMove-1);
+  else if (e.key==='ArrowRight') goToMove(currentMove+1);
+  else if (e.key==='ArrowUp')    goToMove(currentMove-10);
+  else if (e.key==='ArrowDown')  goToMove(currentMove+10);
+});
+
+// ===========================================================================
+// Clicking a game in the games list
+// ===========================================================================
+function onGameClick(e) {
+  var div = e.currentTarget;
+  var idx = parseInt(div.dataset.gameIdx);
+  var ni  = parseInt(div.dataset.moveIdx);
+  loadGame(idx, ni); // navigate to the position where this hash was found
+}
+
+// ===========================================================================
+// Loading
+// ===========================================================================
+var loadingBar = document.getElementById('loading-bar');
+var loadingStatus = document.getElementById('loading-status');
+
+Promise.all([
+  fetch('data/games.json').then(function(r){ loadingBar.style.width='30%'; loadingStatus.textContent='Parsing games…'; return r.json(); }),
+  fetch('data/situations.json').then(function(r){ loadingBar.style.width='60%'; loadingStatus.textContent='Parsing situations…'; return r.json(); })
+]).then(function(results) {
+  loadingBar.style.width='80%'; loadingStatus.textContent='Initializing…';
+  games = results[0]; situations = results[1];
+
+  // Compute year range from data
+  var minY = Infinity, maxY = -Infinity;
+  for (var i = 0; i < games.length; i++) {
+    if (games[i].dt) { var y = parseInt(games[i].dt); if (y < minY) minY = y; if (y > maxY) maxY = y; }
+  }
+  dataMinYear = minY; dataMaxYear = maxY;
+  eraMinYear = minY; eraMaxYear = maxY;
+
+  sliderMin.min = 0; sliderMin.max = SLIDER_STEPS;
+  sliderMax.min = 0; sliderMax.max = SLIDER_STEPS;
+  sliderMin.value = 0; sliderMax.value = SLIDER_STEPS;
+  renderEraMarkers();
+  updateSliderFill();
+
+  loadingBar.style.width='100%';
+  setTimeout(function(){ document.getElementById('loading').style.display='none'; }, 300);
+
+  // Start at empty board (no game loaded yet) to show opening suggestions
+  currentBoard = makeBoard();
+  currentMove = 0;
+  currentGame = null;
+  explorationMoves = [];
+  renderBoard(currentBoard, -1, -1);
+  document.getElementById('move-label').textContent = 'Move 0';
+  updateStats();
+  updateGamesList();
+  renderNextMoves();
+
+}).catch(function(err) {
+  loadingStatus.textContent = 'Error: '+err.message;
+  console.error(err);
+});
+</script>
+</body>
+</html>
