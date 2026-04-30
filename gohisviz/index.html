@@ -302,11 +302,11 @@ var chart = d3.select('#go_board_div').append('svg')
   .style('display','block').style('margin','auto').style('background','#dcb46a');
 
 for (var i = 0; i < boardSize; i++) {
-  chart.append('line').attr('x1',margin.left+i*hgap).attr('y1',margin.top).attr('x2',margin.left+i*hgap).attr('y2',H-margin.top).style('stroke','rgb(0,0,0)').style('stroke-width',W/250);
+  chart.append('line').attr('x1',margin.left+(18-i)*hgap).attr('y1',margin.top).attr('x2',margin.left+(18-i)*hgap).attr('y2',H-margin.top).style('stroke','rgb(0,0,0)').style('stroke-width',W/250);
   chart.append('line').attr('x1',margin.left).attr('y1',margin.top+i*vgap).attr('x2',W-margin.left).attr('y2',margin.top+i*vgap).style('stroke','rgb(0,0,0)').style('stroke-width',W/250);
 }
 [[3,3],[3,9],[3,15],[9,3],[9,9],[9,15],[15,3],[15,9],[15,15]].forEach(function(p) {
-  chart.append('circle').attr('cx',margin.left+p[0]*hgap).attr('cy',margin.top+p[1]*vgap).attr('r',W/150).attr('fill','black');
+  chart.append('circle').attr('cx',margin.left+(18-p[0])*hgap).attr('cy',margin.top+p[1]*vgap).attr('r',W/150).attr('fill','black');
 });
 
 var stoneLayer = chart.append('g').attr('id','stones');
@@ -318,7 +318,7 @@ function renderBoard(board, lastCol, lastRow) {
     for (var c = 0; c < 19; c++) {
       var val = board[r*19+c];
       if (val===0) continue;
-      var cx = margin.left+c*hgap, cy = margin.top+r*vgap;
+      var cx = margin.left+(18-c)*hgap, cy = margin.top+r*vgap;
       var isLast = (c===lastCol && r===lastRow);
       var stone = stoneLayer.append('circle').attr('cx',cx).attr('cy',cy).attr('r',vgap/2.3).style('stroke','black').style('stroke-width',W/300);
       if (val===1) {
@@ -379,10 +379,14 @@ function lexMinStonePos(row, col) {
 // Returns {key: {count, col, row}} where col/row are display (current board) coords.
 function getNextMoveData() {
   var flat = Array.from(currentBoard);
-  // Moves are stored pre-normalized by build.py (first stone → top-right),
-  // so tGame from situations correctly maps any game's board to canonical form.
   var tCurrent = findCanonicalTransform(flat);
-  var tCurrentInv = TRANSFORM_INVERSE[tCurrent];
+  var canonicalStr = applyTransform(flat, tCurrent).join('');
+
+  // All transforms that produce the canonical form (symmetry group)
+  var symGroup = [];
+  for (var t = 0; t < 8; t++) {
+    if (applyTransform(flat, t).join('') === canonicalStr) symGroup.push(t);
+  }
 
   var hash = canonicalHash(flat);
   var pairs = situations[hash] || [];
@@ -397,9 +401,16 @@ function getNextMoveData() {
 
     var col = ch0.charCodeAt(0)-97, row = ch1.charCodeAt(0)-97;
     var canon = applyTransformToPoint(row, col, tGame);
-    var disp = applyTransformToPoint(canon[0], canon[1], tCurrentInv);
-    var key = disp[1]+'_'+disp[0];
-    if (!data[key]) data[key] = {count:0, col:disp[1], row:disp[0]};
+
+    // Pick lex-min display position across all symmetry-group inverses
+    var bestDisp = null;
+    for (var si = 0; si < symGroup.length; si++) {
+      var tInv = TRANSFORM_INVERSE[symGroup[si]];
+      var d = applyTransformToPoint(canon[0], canon[1], tInv);
+      if (bestDisp===null || d[0]<bestDisp[0] || (d[0]===bestDisp[0] && d[1]<bestDisp[1])) bestDisp = d;
+    }
+    var key = bestDisp[1]+'_'+bestDisp[0];
+    if (!data[key]) data[key] = {count:0, col:bestDisp[1], row:bestDisp[0]};
     data[key].count++;
   }
   return data;
@@ -439,7 +450,7 @@ function renderNextMoves() {
       textOpacity = Math.min(1, opacity+0.15);
     }
 
-    var cx = margin.left+col*hgap, cy = margin.top+row*vgap;
+    var cx = margin.left+(18-col)*hgap, cy = margin.top+row*vgap;
     var grp = nextMoveLayer.append('g').style('cursor','pointer');
     grp.append('circle')
       .attr('cx',cx).attr('cy',cy).attr('r',vgap/2.3)
@@ -620,7 +631,20 @@ function onNextMoveDotHover(dispCol, dispRow) {
   var hoverBoard = new Int8Array(currentBoard);
   if (!placeStone(hoverBoard, dispCol, dispRow, color)) return;
   var hoverHash = canonicalHash(Array.from(hoverBoard));
-  updateStatsForHash(hoverHash, 'if placed: ');
+
+  // Win rate from resulting position hash (meaningful)
+  var filtered = getFilteredPairs(hoverHash);
+  var total = filtered.length;
+  var bwins = filtered.filter(function(p){ var re=games[p[0]].re; return re&&re[0]==='B'; }).length;
+  var pct = total>0 ? Math.round(bwins/total*100) : 50;
+  document.getElementById('stat-bar').style.width = pct+'%';
+  document.getElementById('stat-pct').textContent = total>0 ? 'if placed: '+pct+'% Black' : '—';
+
+  // Count from dot (games that played this specific move from current position)
+  var data = getNextMoveData();
+  var key = dispCol+'_'+dispRow;
+  var dotCount = data[key] ? data[key].count : 0;
+  document.getElementById('stat-count').textContent = dotCount>0 ? dotCount : '—';
 }
 
 function renderFilterTags() {
@@ -660,7 +684,26 @@ function updateGamesList() {
   renderFilterTags();
   var list = document.getElementById('games-list');
   list.innerHTML = '';
-  if (total === 0) return;
+  if (total === 0) {
+    if (currentGame !== null) {
+      // Show current game info as fallback
+      var g = games[currentGame];
+      var re = g.re || '';
+      var div = document.createElement('div');
+      div.className = 'game-item active';
+      div.innerHTML =
+        '<div class="game-title">' +
+        '<span class="stone-dot black-dot" style="margin-right:3px"></span>' + esc(g.pb||'?') +
+        ' <span class="vs-sep">vs</span> ' +
+        '<span class="stone-dot white-dot" style="margin-right:3px"></span>' + esc(g.pw||'?') +
+        '</div>' +
+        '<div class="game-meta">' + esc(g.dt||'') +
+        ' <span class="game-result ' + (re[0]==='B'?'result-b':'result-w') + '">' + esc(re) + '</span>' +
+        (g.ev ? ' · '+esc(g.ev) : '') + '</div>';
+      list.appendChild(div);
+    }
+    return;
+  }
 
   if (total < 30) {
     // Individual game rows
