@@ -37,6 +37,7 @@ body { font-family: 'Segoe UI', sans-serif; background: #f5f0e8; color: #333; he
 #nav-bar button { padding: 4px 12px; cursor: pointer; background: #444; color: #eee; border: none; border-radius: 3px; font-size: 13px; }
 #nav-bar button:hover { background: #666; }
 #move-label { font-size: 13px; color: #555; }
+#explore-msg { display: none; margin-top: 8px; max-width: 460px; text-align: center; font-size: 12px; line-height: 1.4; color: #7a5a00; background: #fbf0d0; border: 1px solid #e0c878; border-radius: 4px; padding: 7px 10px; }
 #games-panel { width: 240px; flex-shrink: 0; background: #ede8d8; border-left: 1px solid #ccc; display: flex; flex-direction: column; }
 #games-panel h3 { padding: 8px 10px; font-size: 13px; background: #d8d0b8; border-bottom: 1px solid #ccc; flex-shrink: 0; }
 #games-list { flex: 1; overflow-y: auto; }
@@ -76,6 +77,11 @@ body { font-family: 'Segoe UI', sans-serif; background: #f5f0e8; color: #333; he
 .filter-tag.black-tag { background: #333; color: #fff; }
 .filter-tag.white-tag { background: #f0ede0; color: #333; border: 1px solid #aaa; }
 .filter-tag.either-tag { background: #777; color: #fff; }
+.game-item.following { cursor: default; }
+.game-item.following .game-title { padding-right: 16px; }
+.follow-mark { color: #2a5a8a; font-weight: 700; margin-right: 4px; }
+.follow-x { float: right; cursor: pointer; color: #5a5a4a; font-weight: 700; padding: 0 2px; margin-left: 6px; }
+.follow-x:hover { color: #c0392b; }
 .filter-tag-x { cursor: pointer; opacity: 0.55; font-size: 10px; }
 .filter-tag-x:hover { opacity: 1; }
 .filter-vs { font-size: 11px; color: #999; font-style: italic; padding: 0 2px; }
@@ -130,6 +136,7 @@ body { font-family: 'Segoe UI', sans-serif; background: #f5f0e8; color: #333; he
       <span id="move-label">Move 0 / 0</span>
       <button id="btn-next">Next ▶</button>
     </div>
+    <div id="explore-msg"></div>
   </div>
 
   <div id="games-panel">
@@ -364,6 +371,19 @@ function findCanonicalTransform(flat) {
   return bestT;
 }
 
+// Find T in 0..7 such that applyTransform(gameBoardFlat, T) === displayFlat.
+// Such a T always exists when the two boards share a canonical hash; used to render
+// a loaded game in the same orientation the user was exploring (no visual jump).
+function findGameDisplayTransform(gameBoardFlat, displayFlat) {
+  for (var t = 0; t < 8; t++) {
+    var s = applyTransform(gameBoardFlat, t);
+    var ok = true;
+    for (var i = 0; i < 361; i++) { if (s[i] !== displayFlat[i]) { ok = false; break; } }
+    if (ok) return t;
+  }
+  return 0; // fallback (e.g. empty board: all transforms match → identity)
+}
+
 // Find the lex-min position of a single stone over all 8 D4 transforms.
 // Used for the empty-board case where the stored tGame is meaningless (all transforms tie).
 function lexMinStonePos(row, col) {
@@ -416,8 +436,59 @@ function getNextMoveData() {
   return data;
 }
 
+function showExplorePrompt(n) {
+  var el = document.getElementById('explore-msg');
+  el.textContent = MAX_EXPLORE_MOVES + ' moves reached — ' + n +
+    ' games still match. Pick a single game on the right to keep following it.';
+  el.style.display = 'block';
+}
+
+function hideExplorePrompt() {
+  document.getElementById('explore-msg').style.display = 'none';
+}
+
+// While following a single game, always show its next move as a clickable ghost
+// stone — works past the 15-ply aggregate horizon (where there's no situations
+// data). Clicking it advances along the game, like the Next button.
+function renderGameNextMove() {
+  var g = games[currentGame];
+  var total = (g.mv.length/2)|0;
+  if (currentMove >= total) return;
+  var ni = currentMove;
+  var ch0 = g.mv[ni*2], ch1 = g.mv[ni*2+1];
+  if (!ch0 || ch0 === '.') return; // pass move — nothing to place
+  var col = ch0.charCodeAt(0)-97, row = ch1.charCodeAt(0)-97;
+  var d = applyTransformToPoint(row, col, gameTransform); // [row, col] in display space
+  var drow = d[0], dcol = d[1];
+  if (currentBoard[drow*19+dcol] !== 0) return;
+  var isBlackTurn = (currentMove % 2 === 0);
+  var cx = margin.left+(18-dcol)*hgap, cy = margin.top+drow*vgap;
+  var grp = nextMoveLayer.append('g').style('cursor','pointer');
+  grp.append('circle')
+    .attr('cx',cx).attr('cy',cy).attr('r',vgap/2.3)
+    .style('fill', isBlackTurn ? 'black' : 'white')
+    .style('stroke', isBlackTurn ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)')
+    .style('stroke-width', 1.5)
+    .style('opacity', 0.5);
+  grp.on('click', function(){ goToMove(currentMove + 1); });
+}
+
 function renderNextMoves() {
   nextMoveLayer.selectAll('*').remove();
+  hideExplorePrompt();
+
+  // Following one game: show that game's own next move (always, even past ply 15).
+  if (currentGame !== null) { renderGameNextMove(); return; }
+
+  // Exploration: auto-follow once narrowed to a single game (from any path —
+  // dot click, era/player filter, etc.), and stop the aggregate view at the
+  // 15-ply horizon when multiple games still match.
+  if (currentMove >= 1) {
+    var fp = getFilteredPairs(currentHash());
+    if (fp.length === 1 && !autoFollowSuppressed) { loadGame(fp[0][0], fp[0][1]); return; }
+    if (currentMove >= MAX_EXPLORE_MOVES && fp.length >= 2) { showExplorePrompt(fp.length); return; }
+  }
+
   var data = getNextMoveData();
   var keys = Object.keys(data);
   if (keys.length===0) return;
@@ -484,11 +555,12 @@ function onNextMoveDotClick(dispCol, dispRow) {
   currentBoard = newBoard;
   currentMove++;
   currentGame = null;
+  autoFollowSuppressed = false; // active move → auto-follow allowed again
   renderBoard(currentBoard, dispCol, dispRow);
   document.getElementById('move-label').textContent = 'Move ' + currentMove;
   updateStats();
   updateGamesList();
-  renderNextMoves();
+  renderNextMoves(); // auto-follows when only one game remains
 }
 
 // ===========================================================================
@@ -497,6 +569,16 @@ function onNextMoveDotClick(dispCol, dispRow) {
 var games = null, situations = null;
 var currentGame = null, currentMove = 0;
 var currentBoard = makeBoard();
+// D4 transform applied to the loaded game's normalized coords → display coords,
+// so following a game keeps the orientation the user was exploring in.
+var gameTransform = 0;
+// Aggregate next-move data is complete only within the first 15 plies (mirrors
+// build.py EARLY_MOVE_EXCEPTION); beyond that we require following a single game.
+var MAX_EXPLORE_MOVES = 15;
+// When true, exploration won't auto-follow a single remaining game. Set when the
+// user explicitly removes the game filter, so they can Prev back to a real branch
+// point; cleared as soon as they actively play an exploration move.
+var autoFollowSuppressed = false;
 // Exploration mode: stack of {col, row, prevBoard} for undo via Prev button
 var explorationMoves = [];
 
@@ -676,37 +758,52 @@ function renderFilterTags() {
   }
 }
 
+// Inner HTML (title + meta) for a game row, shared by all list views.
+function gameItemInner(g, moveSuffix) {
+  var re = g.re || '';
+  return '<div class="game-title">' +
+    '<span class="stone-dot black-dot" style="margin-right:3px"></span>' + esc(g.pb||'?') +
+    ' <span class="vs-sep">vs</span> ' +
+    '<span class="stone-dot white-dot" style="margin-right:3px"></span>' + esc(g.pw||'?') +
+    '</div>' +
+    '<div class="game-meta">' + esc(g.dt||'') +
+    ' <span class="game-result ' + (re[0]==='B'?'result-b':'result-w') + '">' + esc(re) + '</span>' +
+    (g.ev ? ' · '+esc(g.ev) : '') + (moveSuffix||'') + '</div>';
+}
+
+// The followed game's row: original style + a ▶ following mark and a ✕ to remove
+// the filter. Shown at the top in every view (including the grouped ≥30 view).
+function appendFollowedGameRow(list) {
+  var g = games[currentGame];
+  var div = document.createElement('div');
+  div.className = 'game-item active following';
+  div.innerHTML = gameItemInner(g, '');
+  var title = div.querySelector('.game-title');
+  title.insertAdjacentHTML('afterbegin', '<span class="follow-mark" title="Following this game">▶</span>');
+  var x = document.createElement('span');
+  x.className = 'follow-x'; x.title = 'Stop following this game'; x.textContent = '✕';
+  x.addEventListener('click', function(e){ e.stopPropagation(); removeGameFilter(); });
+  title.appendChild(x);
+  list.appendChild(div);
+}
+
 function updateGamesList() {
   var hash = currentHash();
   var filtered = getFilteredPairs(hash);
   var total = filtered.length;
-  document.getElementById('games-panel-title').textContent = 'Matching Games (' + total + ')';
+  document.getElementById('games-panel-title').textContent =
+    currentGame !== null ? 'Following game' : 'Matching Games (' + total + ')';
   renderFilterTags();
   var list = document.getElementById('games-list');
   list.innerHTML = '';
-  if (total === 0) {
-    if (currentGame !== null) {
-      // Show current game info as fallback
-      var g = games[currentGame];
-      var re = g.re || '';
-      var div = document.createElement('div');
-      div.className = 'game-item active';
-      div.innerHTML =
-        '<div class="game-title">' +
-        '<span class="stone-dot black-dot" style="margin-right:3px"></span>' + esc(g.pb||'?') +
-        ' <span class="vs-sep">vs</span> ' +
-        '<span class="stone-dot white-dot" style="margin-right:3px"></span>' + esc(g.pw||'?') +
-        '</div>' +
-        '<div class="game-meta">' + esc(g.dt||'') +
-        ' <span class="game-result ' + (re[0]==='B'?'result-b':'result-w') + '">' + esc(re) + '</span>' +
-        (g.ev ? ' · '+esc(g.ev) : '') + '</div>';
-      list.appendChild(div);
-    }
-    return;
-  }
+
+  // Always surface the followed game's own row (with mark + ✕) at the top.
+  if (currentGame !== null) appendFollowedGameRow(list);
+
+  if (total === 0) return; // followed row (if any) already shown
 
   if (total < 30) {
-    // Individual game rows
+    // Individual game rows (the followed game is already shown above)
     var sorted = filtered.slice().sort(function(a, b) {
       var ga = games[a[0]], gb = games[b[0]];
       var c = (ga.pb||'').localeCompare(gb.pb||'');
@@ -714,19 +811,11 @@ function updateGamesList() {
     });
     sorted.forEach(function(p) {
       var i = p[0], ni = p[1], g = games[i];
+      if (i === currentGame) return; // shown at top already
       var div = document.createElement('div');
-      div.className = 'game-item' + (i === currentGame ? ' active' : '');
+      div.className = 'game-item';
       div.dataset.gameIdx = i; div.dataset.moveIdx = ni;
-      var re = g.re || '';
-      div.innerHTML =
-        '<div class="game-title">' +
-        '<span class="stone-dot black-dot" style="margin-right:3px"></span>' + esc(g.pb||'?') +
-        ' <span class="vs-sep">vs</span> ' +
-        '<span class="stone-dot white-dot" style="margin-right:3px"></span>' + esc(g.pw||'?') +
-        '</div>' +
-        '<div class="game-meta">' + esc(g.dt||'') +
-        ' <span class="game-result ' + (re[0]==='B'?'result-b':'result-w') + '">' + esc(re) + '</span>' +
-        (g.ev ? ' · '+esc(g.ev) : '') + ' (move ' + ni + ')</div>';
+      div.innerHTML = gameItemInner(g, ' (move ' + ni + ')');
       div.addEventListener('click', onGameClick);
       list.appendChild(div);
     });
@@ -837,12 +926,64 @@ function esc(s) {
 // Navigation
 // ===========================================================================
 function loadGame(gameIdx, targetMove) {
-  explorationMoves = []; // leave exploration mode when loading a specific game
-  currentGame = gameIdx;
   var g = games[gameIdx];
   var total = (g.mv.length/2)|0;
   if (targetMove===undefined||targetMove===null) targetMove=0;
-  goToMove(Math.max(0, Math.min(targetMove, total)));
+  targetMove = Math.max(0, Math.min(targetMove, total));
+  // Preserve current orientation: find the transform mapping the game's board
+  // at targetMove onto the board the user is currently looking at.
+  var gb = replayTo(g.mv, targetMove).board;
+  gameTransform = findGameDisplayTransform(Array.from(gb), currentBoard);
+  explorationMoves = []; // leave exploration mode when loading a specific game
+  autoFollowSuppressed = false;
+  currentGame = gameIdx;
+  goToMove(targetMove);
+}
+
+// Rebuild the exploration undo-stack (display coords) from a game's first `upto`
+// plies, so Prev keeps working after we drop back into exploration mode.
+function rebuildExplorationStack(g, upto) {
+  explorationMoves = [];
+  var board = makeBoard(), color = 1;
+  for (var i = 0; i < upto; i++) {
+    var prev = Int8Array.from(applyTransform(Array.from(board), gameTransform));
+    var ch0 = g.mv[i*2], ch1 = g.mv[i*2+1], dc = -1, dr = -1;
+    if (ch0 && ch0 !== '.') {
+      var col = ch0.charCodeAt(0)-97, row = ch1.charCodeAt(0)-97;
+      placeStone(board, col, row, color);
+      var d = applyTransformToPoint(row, col, gameTransform);
+      dr = d[0]; dc = d[1];
+    }
+    explorationMoves.push({col: dc, row: dr, prevBoard: prev});
+    color = 3 - color;
+  }
+}
+
+// Stop following the single game and return to the aggregate exploration view.
+// Beyond ply 15 we rewind to ply 15 (the deepest aggregate situation for this
+// game); within 15 we stay at the current move. Orientation is preserved.
+function removeGameFilter() {
+  if (currentGame === null) return;
+  var g = games[currentGame];
+  var target = currentMove > MAX_EXPLORE_MOVES ? MAX_EXPLORE_MOVES : currentMove;
+  var res = replayTo(g.mv, target);
+  rebuildExplorationStack(g, target);
+  currentBoard = Int8Array.from(applyTransform(Array.from(res.board), gameTransform));
+  currentMove = target;
+  currentGame = null;
+  // Stay in manual exploration (no auto-follow) until the user plays a move, so
+  // they can Prev back to a real branch point instead of being re-followed.
+  autoFollowSuppressed = true;
+  var ldc = -1, ldr = -1;
+  if (res.lastCol >= 0) {
+    var d = applyTransformToPoint(res.lastRow, res.lastCol, gameTransform);
+    ldr = d[0]; ldc = d[1];
+  }
+  renderBoard(currentBoard, ldc, ldr);
+  document.getElementById('move-label').textContent = 'Move ' + currentMove;
+  updateStats();
+  updateGamesList();
+  renderNextMoves();
 }
 
 function goToMove(moveNum) {
@@ -867,9 +1008,14 @@ function goToMove(moveNum) {
   var total = (g.mv.length/2)|0;
   moveNum = Math.max(0, Math.min(moveNum, total));
   var result = replayTo(g.mv, moveNum);
-  currentBoard = result.board;
+  currentBoard = Int8Array.from(applyTransform(Array.from(result.board), gameTransform));
   currentMove = result.moveCount;
-  renderBoard(currentBoard, result.lastCol, result.lastRow);
+  var ldc = -1, ldr = -1;
+  if (result.lastCol >= 0) {
+    var d = applyTransformToPoint(result.lastRow, result.lastCol, gameTransform); // [row, col]
+    ldr = d[0]; ldc = d[1];
+  }
+  renderBoard(currentBoard, ldc, ldr);
   document.getElementById('move-label').textContent = 'Move '+currentMove+' / '+total;
   updateStats();
   updateGamesList();
