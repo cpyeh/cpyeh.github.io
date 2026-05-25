@@ -1,0 +1,14 @@
+{
+  "source_url": "https://homepages.cwi.nl/~aeb/go/games/games.tgz",
+  "tgz_sha256": "ec260c91438d31c43a1430fec3cf4c588c4acfa15550a757c43bb830260ee17b",
+  "tgz_etag": "\"2be306a-65292c8b24b7d\"",
+  "tgz_last_modified": "Sun, 24 May 2026 16:30:46 GMT",
+  "tgz_size_bytes": 46018666,
+  "build_py_sha256": "3048885d1752055940125c67132261bbb4a5a704a9b6ff3e56b8649f2b81556e",
+  "built_at": "2026-05-25T00:40:31Z",
+  "sgf_files": 95671,
+  "games": 87778,
+  "situations": 552717,
+  "games_json_bytes": 45478803,
+  "situations_json_bytes": 28440502
+}
